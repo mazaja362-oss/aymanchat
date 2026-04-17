@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 
-const ICE: RTCConfiguration = {
+const FALLBACK_ICE: RTCConfiguration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 };
+
+async function loadRtcConfiguration(): Promise<RTCConfiguration> {
+  try {
+    const r = await fetch('/api/webrtc/ice');
+    if (!r.ok) return FALLBACK_ICE;
+    const data = (await r.json()) as { iceServers?: RTCIceServer[] };
+    const servers = Array.isArray(data.iceServers) ? data.iceServers : [];
+    if (servers.length === 0) return FALLBACK_ICE;
+    return { iceServers: servers };
+  } catch {
+    return FALLBACK_ICE;
+  }
+}
 
 export type CallMedia = 'audio' | 'video';
 
@@ -38,6 +51,14 @@ export function useWebRtcCall(opts: {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const rtcConfigCache = useRef<RTCConfiguration | null>(null);
+
+  const getRtcConfig = useCallback(async () => {
+    if (rtcConfigCache.current) return rtcConfigCache.current;
+    const cfg = await loadRtcConfiguration();
+    rtcConfigCache.current = cfg;
+    return cfg;
+  }, []);
 
   const cleanupPc = useCallback(() => {
     try {
@@ -192,7 +213,8 @@ export function useWebRtcCall(opts: {
         localStreamRef.current = stream;
         if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
-        const pc = new RTCPeerConnection(ICE);
+        const rtcConfig = await getRtcConfig();
+        const pc = new RTCPeerConnection(rtcConfig);
         pcRef.current = pc;
         setupIce(pc, toUserId, callId);
         stream.getTracks().forEach((t) => pc.addTrack(t, stream));
@@ -212,7 +234,7 @@ export function useWebRtcCall(opts: {
         endCall();
       }
     },
-    [socket, selfId, isGroup, phase, cleanupPc, setupIce, onError, endCall]
+    [socket, selfId, isGroup, phase, cleanupPc, setupIce, onError, endCall, getRtcConfig]
   );
 
   const acceptIncoming = useCallback(async () => {
@@ -232,7 +254,8 @@ export function useWebRtcCall(opts: {
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
-      const pc = new RTCPeerConnection(ICE);
+      const rtcConfig = await getRtcConfig();
+      const pc = new RTCPeerConnection(rtcConfig);
       pcRef.current = pc;
       setupIce(pc, fromUserId, callId);
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
@@ -252,7 +275,7 @@ export function useWebRtcCall(opts: {
       socket.emit('call:end', { toUserId: fromUserId, callId });
       endCall();
     }
-  }, [socket, selfId, cleanupPc, setupIce, onError, endCall]);
+  }, [socket, selfId, cleanupPc, setupIce, onError, endCall, getRtcConfig]);
 
   const declineIncoming = useCallback(() => {
     const inc = incomingRef.current;
@@ -286,6 +309,5 @@ export function useWebRtcCall(opts: {
     remoteAudioRef,
     remoteVideoRef,
     localVideoRef,
-    mediaRef,
   };
 }

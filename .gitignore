@@ -7,3 +7,4 @@ data/
 test-results/
 playwright-report/
 playwright/.cache/
+client/.vite/

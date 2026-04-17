@@ -77,6 +77,10 @@ npm run dev
 | `CLIENT_DIST`  | مجلد `client/dist` لخدمة SPA من Express | — (اختياري)        |
 | `USE_SQLITE`   | `1` لتفعيل تخزين sql.js بدل ملفات JSON فقط | `0` / غير معيّن |
 | `SQLITE_PATH`  | مسار ملف قاعدة sql.js                  | `server/data/ayman.sqljs.db` |
+| `ICE_SERVERS_JSON` | مصفوفة JSON لخوادم STUN/TURN لـ WebRTC | STUN افتراضي من `/api/webrtc/ice` |
+| `ENABLE_METRICS` | `1` لتفعيل **`GET /metrics`** (Prometheus) | غير مفعّل |
+| `LOG_REQUESTS`   | `1` لطباعة كل طلب HTTP (بدون ضجيج socket.io في السطر) | غير مفعّل |
+| `LOG_LEVEL`      | `info` / `warn` / `error` / `debug` / `silent`            | `info`        |
 
 مثال تشغيل على ويندوز (PowerShell):
 
@@ -144,18 +148,28 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-يُشغِّل `playwright.config.ts` خادماً مؤقتاً عبر `scripts/e2e-serve.mjs` (بناء + `CLIENT_DIST`).
+يُشغِّل `playwright.config.ts` خادماً مؤقتاً عبر `scripts/e2e-serve.mjs` (بناء + `CLIENT_DIST`). يتضمّن اختباراً لمحادثة بين مستخدمين (`e2e/two-user-chat.spec.ts`).
 
 ## nginx و HTTPS
 
 مثال إعداد وسيط عكسي مع WebSocket: `deploy/nginx-ayman-chat.example.conf` — انسخه وعدّل النطاق والشهادات.
+
+## المراقبة (Prometheus)
+
+فعّل **`ENABLE_METRICS=1`** ثم اجمع من **`GET /metrics`** (تنسيق Prometheus). في الإنتاج اجعل الوصول داخل الشبكة أو خلف وسيط يقيّد المسار.
+
+## WebRTC: STUN و TURN
+
+- الواجهة تجلب إعدادات ICE من **`GET /api/webrtc/ice`** (افتراضياً: STUN العام لـ Google).
+- لتفعيل **TURN** (موصى به خلف NAT صارم): شغّل خادماً مثل **coturn**، ثم عيّن على خادم التطبيق متغير **`ICE_SERVERS_JSON`** بمصفوفة JSON لـ `RTCIceServer[]` (انظر مثال الملف `deploy/docker-compose.coturn.example.yml` وتعليقاته).
 
 ## استكشاف الأخطاء
 
 | المشكلة | ما يمكن فعله |
 |---------|----------------|
 | `EADDRINUSE` على المنفذ **3000** | شيء آخر يستخدم 3000 (غالباً تشغيل سابق لـ Ayman Chat). إما أوقف العملية بعد معرفة الـ PID بـ `netstat -ano` ثم `taskkill /PID ... /F`، أو شغّل على منفذ آخر من جذر المشروع: `$env:PORT="3001"; npm run dev` (وكيل Vite يستخدم نفس `PORT` تلقائياً). |
-| الصفحة لا تتصل بالخادم | تأكد أن `npm run dev` يعمل وأن المنفذ 3000 غير محجوز من برنامج آخر. |
+| الصفحة لا تتصل بالخادم | شغّل من **جذر المشروع** `npm run dev` (خادم + واجهة). إذا شغّلت الواجهة وحدها (`npm run dev --prefix client`) يجب أن يعمل الخادم قبلها على **نفس `PORT`** (مثلاً `npm run dev --prefix server` مع `$env:PORT="3001"` إن كان الوكيل يوجّه إلى 3001). |
+| `http proxy error` + `ECONNREFUSED` في طرف Vite | غالباً **لا يوجد خادم** على المنفذ المستهدف، أو الخادم ما زال يقلع. استخدم `npm run dev` من الجذر، أو انتظر حتى يظهر `Ayman Chat server http://localhost:...`. |
 | «غير مصرح» بعد التحديث | احذف التخزين المحلي للموقع أو سجّل خروجاً ثم دخولاً. |
 | لا يظهر مستخدمون | تحتاج حسابين على الأقل؛ أنشئ حساباً ثانياً في نافذة/متصفح آخر. |
 
