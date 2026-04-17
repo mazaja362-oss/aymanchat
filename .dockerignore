@@ -1,0 +1,7 @@
+.git
+.cursor
+**/node_modules
+server/data
+client/dist
+*.log
+.DS_Store

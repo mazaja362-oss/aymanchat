@@ -176,6 +176,11 @@ export default function App() {
   const [statuses, setStatuses] = useState<StatusRow[]>([]);
   const [statusDraft, setStatusDraft] = useState('');
   const [chatFilter, setChatFilter] = useState('');
+  const [threadSearchOpen, setThreadSearchOpen] = useState(false);
+  const [threadSearchQuery, setThreadSearchQuery] = useState('');
+  const [socketConn, setSocketConn] = useState<
+    'connecting' | 'connected' | 'reconnecting' | 'disconnected' | null
+  >(null);
 
   const meRef = useRef<User | null>(null);
   const activePeerRef = useRef<User | null>(null);
@@ -192,6 +197,7 @@ export default function App() {
 
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -280,6 +286,30 @@ export default function App() {
       cancelled = true;
     };
   }, [token, mainTab, refreshStatuses]);
+
+  useEffect(() => {
+    if (!socket) {
+      setSocketConn(null);
+      return;
+    }
+    setSocketConn(socket.connected ? 'connected' : 'connecting');
+    const onConnect = () => setSocketConn('connected');
+    const onDisconnect = () => setSocketConn('disconnected');
+    const onReconnectAttempt = () => setSocketConn('reconnecting');
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    socket.io.on('reconnect_attempt', onReconnectAttempt);
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      socket.io.off('reconnect_attempt', onReconnectAttempt);
+    };
+  }, [socket]);
+
+  useEffect(() => {
+    setThreadSearchQuery('');
+    setThreadSearchOpen(false);
+  }, [activePeer?.id, activeGroup?.id]);
 
   useEffect(() => {
     if (!socket) return;
@@ -626,7 +656,20 @@ export default function App() {
     });
   }, [mergedChats, chatFilter]);
 
-  const messageTimeline = useMemo(() => buildMessageTimeline(messages), [messages]);
+  const filteredThreadMessages = useMemo(() => {
+    const q = threadSearchQuery.trim().toLowerCase();
+    if (!q) return messages;
+    return messages.filter((m) => (m.text || '').toLowerCase().includes(q));
+  }, [messages, threadSearchQuery]);
+
+  const messageTimeline = useMemo(
+    () => buildMessageTimeline(filteredThreadMessages),
+    [filteredThreadMessages]
+  );
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [messageTimeline, activePeer?.id, activeGroup?.id]);
 
   const threadTitle = activeGroup
     ? activeGroup.name
@@ -741,6 +784,15 @@ export default function App() {
 
   return (
     <div className="app wa-app">
+      {socketConn && socketConn !== 'connected' ? (
+        <div className={`wa-socket-banner wa-socket-${socketConn}`} role="status" aria-live="polite">
+          {socketConn === 'connecting' ? 'جاري الاتصال بالخادم…' : null}
+          {socketConn === 'disconnected'
+            ? 'انقطع الاتصال — سيتم إعادة المحاولة تلقائياً'
+            : null}
+          {socketConn === 'reconnecting' ? 'جاري إعادة الاتصال…' : null}
+        </div>
+      ) : null}
       <div className="wa-shell">
         <main className="layout wa-layout">
           <aside className="sidebar wa-sidebar">
@@ -1040,7 +1092,14 @@ export default function App() {
                   <button type="button" className="wa-thread-ic-btn" title="صوت" disabled>
                     📞
                   </button>
-                  <button type="button" className="wa-thread-ic-btn" title="بحث" disabled>
+                  <button
+                    type="button"
+                    className="wa-thread-ic-btn"
+                    title="بحث في المحادثة"
+                    aria-expanded={threadSearchOpen}
+                    aria-controls="thread-message-search"
+                    onClick={() => setThreadSearchOpen((v) => !v)}
+                  >
                     🔍
                   </button>
                   <button type="button" className="wa-thread-ic-btn" title="قائمة" disabled>
@@ -1049,36 +1108,69 @@ export default function App() {
                 </div>
               </div>
 
+              {threadSearchOpen ? (
+                <div id="thread-message-search" className="wa-thread-search">
+                  <label className="wa-thread-search-label">
+                    <span className="wa-sr-only">بحث في رسائل هذه المحادثة</span>
+                    <input
+                      className="wa-thread-search-input"
+                      value={threadSearchQuery}
+                      onChange={(e) => setThreadSearchQuery(e.target.value)}
+                      placeholder="ابحث في نص الرسائل…"
+                      dir="auto"
+                      autoFocus
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="wa-thread-search-close"
+                    onClick={() => {
+                      setThreadSearchOpen(false);
+                      setThreadSearchQuery('');
+                    }}
+                  >
+                    إغلاق
+                  </button>
+                </div>
+              ) : null}
+
               <div className="messages wa-messages">
-                {messageTimeline.map((item) => {
-                  if (item.kind === 'sep') {
+                {filteredThreadMessages.length === 0 &&
+                messages.length > 0 &&
+                threadSearchQuery.trim() ? (
+                  <div className="muted pad wa-thread-empty-search">لا رسائل تطابق البحث.</div>
+                ) : (
+                  messageTimeline.map((item) => {
+                    if (item.kind === 'sep') {
+                      return (
+                        <div key={item.key} className="wa-day-sep" role="separator">
+                          <span>{item.label}</span>
+                        </div>
+                      );
+                    }
+                    const m = item.msg;
+                    const mine = m.fromUserId === me.id;
+                    const tick = mine ? '✓✓' : '';
                     return (
-                      <div key={item.key} className="wa-day-sep" role="separator">
-                        <span>{item.label}</span>
+                      <div key={m.id} className={mine ? 'bubble mine wa-bubble' : 'bubble wa-bubble'}>
+                        {activeGroup && !mine ? (
+                          <div className="who muted tiny wa-bubble-sender">
+                            {userById[m.fromUserId]?.displayName || 'عضو'}
+                          </div>
+                        ) : null}
+                        {m.kind === 'image' && m.imageUrl ? (
+                          <img className="bubble-img" src={m.imageUrl} alt="" loading="lazy" />
+                        ) : null}
+                        {m.text ? <div className="bubble-text">{m.text}</div> : null}
+                        <div className="bubble-meta wa-bubble-foot">
+                          <span className="wa-bubble-time">{formatTimeShort(m.createdAt)}</span>
+                          {mine ? <span className="wa-tick">{tick}</span> : null}
+                        </div>
                       </div>
                     );
-                  }
-                  const m = item.msg;
-                  const mine = m.fromUserId === me.id;
-                  const tick = mine ? '✓✓' : '';
-                  return (
-                    <div key={m.id} className={mine ? 'bubble mine wa-bubble' : 'bubble wa-bubble'}>
-                      {activeGroup && !mine ? (
-                        <div className="who muted tiny wa-bubble-sender">
-                          {userById[m.fromUserId]?.displayName || 'عضو'}
-                        </div>
-                      ) : null}
-                      {m.kind === 'image' && m.imageUrl ? (
-                        <img className="bubble-img" src={m.imageUrl} alt="" loading="lazy" />
-                      ) : null}
-                      {m.text ? <div className="bubble-text">{m.text}</div> : null}
-                      <div className="bubble-meta wa-bubble-foot">
-                        <span className="wa-bubble-time">{formatTimeShort(m.createdAt)}</span>
-                        {mine ? <span className="wa-tick">{tick}</span> : null}
-                      </div>
-                    </div>
-                  );
-                })}
+                  })
+                )}
+                <div ref={messagesEndRef} className="wa-messages-end" aria-hidden />
               </div>
 
               <form className="composer wa-composer" onSubmit={sendMessage}>

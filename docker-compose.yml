@@ -1,0 +1,15 @@
+services:
+  ayman-chat:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      # غيّرها عند النشر خلف نطاق أو HTTPS
+      CLIENT_ORIGIN: "${CLIENT_ORIGIN:-http://localhost:3000}"
+      JWT_SECRET: "${JWT_SECRET:-change-me-in-production-use-long-random}"
+    volumes:
+      - ayman_data:/app/data
+
+volumes:
+  ayman_data:

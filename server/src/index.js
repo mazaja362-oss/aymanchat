@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
@@ -41,6 +42,17 @@ function syncSocketsToGroup(group) {
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '8mb' }));
+
+/** يحدّ من محاولات التسجيل/الدخول لكل عنوان IP */
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    res.status(429).json({ error: 'طلبات كثيرة من هذا العنوان، حاول بعد قليل' });
+  },
+});
 
 ensureUploadsDir();
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -145,7 +157,7 @@ function buildInbox(userId) {
   return { directs, groups: groupItems };
 }
 
-app.post('/api/register', (req, res) => {
+app.post('/api/register', authLimiter, (req, res) => {
   const { username, password, displayName } = req.body || {};
   const u = String(username || '').trim().toLowerCase();
   const p = String(password || '');
@@ -185,7 +197,7 @@ app.post('/api/register', (req, res) => {
   return res.json({ token, user: safeUser(row) });
 });
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', authLimiter, (req, res) => {
   const { username, password } = req.body || {};
   const u = String(username || '').trim().toLowerCase();
   const p = String(password || '');
@@ -413,6 +425,27 @@ app.post('/api/media', authMiddleware, (req, res) => {
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, name: 'Ayman Chat API' });
 });
+
+/** واجهة الإنتاج: مسار مجلد `dist` بعد `npm run build` في `client/` */
+const CLIENT_DIST_RAW = process.env.CLIENT_DIST ? String(process.env.CLIENT_DIST).trim() : '';
+const CLIENT_DIST_ABS =
+  CLIENT_DIST_RAW && fs.existsSync(CLIENT_DIST_RAW)
+    ? path.resolve(CLIENT_DIST_RAW)
+    : '';
+if (CLIENT_DIST_ABS) {
+  app.use(express.static(CLIENT_DIST_ABS));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    if (
+      req.path.startsWith('/api') ||
+      req.path.startsWith('/uploads') ||
+      req.path.startsWith('/socket.io')
+    ) {
+      return next();
+    }
+    res.sendFile(path.join(CLIENT_DIST_ABS, 'index.html'));
+  });
+}
 
 const server = http.createServer(app);
 const io = new Server(server, {

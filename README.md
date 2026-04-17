@@ -61,8 +61,10 @@ npm run dev
 
 - **JWT:** المفتاح الافتراضي للتطوير مضمّن في الكود للتشغيل السريع. قبل أي نشر:
   - عيّن متغير بيئة **`JWT_SECRET`** (سلسلة عشوائية طويلة ومعقّدة).
+  - يمكنك نسخ `server/.env.example` إلى `server/.env` وتعديل القيم محلياً (لا ترفع `.env`).
 - **الاتصال:** هذا المشروع للتطوير المحلي؛ للإنترنت العام استخدم **HTTPS** ووسيط عكسي (مثل nginx) وقيود مناسبة.
 - **كلمات المرور:** تُخزَّن مشفّرة بـ bcrypt على الخادم فقط.
+- **تسجيل الدخول والتسجيل:** يوجد حدّ لمعدل الطلبات لكل عنوان IP لتقليل محاولات القوة الغاشمة.
 
 ## متغيرات البيئة (اختياري)
 
@@ -71,6 +73,7 @@ npm run dev
 | `PORT`         | منفذ الخادم                     | `3000`                    |
 | `CLIENT_ORIGIN`| أصل الواجهة المسموح (CORS/Socket) | `http://localhost:5173`   |
 | `JWT_SECRET`   | مفتاح توقيع الرموز              | قيمة تطوير (غيّرها)      |
+| `CLIENT_DIST`  | مجلد `client/dist` لخدمة SPA من Express | — (اختياري)        |
 
 مثال تشغيل على ويندوز (PowerShell):
 
@@ -88,7 +91,42 @@ npm run start
 npm run build --prefix client
 ```
 
-المخرجات في `client/dist/`. يمكنك خدمتها من أي خادم ثابت، مع تشغيل خادم `server` خلفه وتوجيه `/api` و`/socket.io` إلى منفذ الخادم.
+المخرجات في `client/dist/`.
+
+### خادم واحد (API + الواجهة + Socket.io)
+
+بعد البناء، مرّر مسار `dist` إلى الخادم بمتغير **`CLIENT_DIST`** (مسار مطلق أو نسبي لمجلد `client/dist`). عندها يخدم Express الملفات الثابتة و`index.html` للمسارات غير API، مع الإبقاء على `/api` و`/uploads` و`/socket.io`.
+
+```powershell
+$env:CLIENT_DIST="C:\Users\YOU\Projects\ayman-chat\client\dist"
+$env:CLIENT_ORIGIN="http://localhost:3000"
+$env:PORT="3000"
+npm run start --prefix server
+```
+
+افتح `http://localhost:3000` (يجب أن يطابق `CLIENT_ORIGIN` أصل المتصفح حتى يعمل CORS واتصال Socket.io).
+
+## Docker
+
+يتطلّب [Docker](https://docs.docker.com/get-docker/) وDocker Compose.
+
+```bash
+docker compose up --build
+```
+
+ثم المتصفح على **`http://localhost:3000`**. البيانات في مجلد Docker volume اسمه `ayman_data`.
+
+- إذا غيّرت منفذ الاستضافة على الجهاز (مثلاً `8080:3000`)، عيّن **`CLIENT_ORIGIN`** ليطابق ما يكتبه المتصفح في شريط العنوان، مثلاً:  
+  `CLIENT_ORIGIN=http://localhost:8080 docker compose up`
+- للإنتاج خلف HTTPS، استخدم `CLIENT_ORIGIN=https://اسم-النطاق` ووسيطاً عكسياً يمرّر WebSocket.
+
+## اختبار دخان (API)
+
+من جذر المشروع (يُشغّل خادماً مؤقتاً على المنفذ 3049 افتراضياً):
+
+```bash
+npm run test:smoke
+```
 
 ## استكشاف الأخطاء
 
