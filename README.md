@@ -118,3 +118,5 @@ ayman-chat/
 ---
 
 **ملخص:** بعد `npm run install:all` ثم `npm run dev`، افتح `http://localhost:5173` وسجّل حسابين لتجربة **Ayman Chat** فوراً.
+
+
