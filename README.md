@@ -8,6 +8,7 @@
 - **تسجيل الدخول** والاحتفاظ بالجلسة في المتصفح.
 - **قائمة المستخدمين** (كل الحسابات ما عدا حسابك).
 - **محادثة خاصة** مع أي مستخدم: تحميل السجل + إرسال واستقبال فوري عبر WebSocket (Socket.io).
+- **مكالمة صوت/فيديو (تجريبية)** بين مستخدمين عبر WebRTC مع إشارات عبر الخادم (زرّي 📞 و 📹 داخل المحادثة الخاصة).
 
 ## المتطلبات على جهازك
 
@@ -52,10 +53,10 @@ npm run dev
 
 ## البيانات والتخزين
 
-- تُحفظ الحسابات والرسائل في مجلد: `server/data/`
-  - `users.json`
-  - `messages.json`
-- المجلد يُنشأ تلقائياً عند أول تشغيل. يمكنك نسخه احتياطياً أو حذفه لإعادة «تفريغ» التطبيق.
+- **الوضع الافتراضي:** تُحفظ الحسابات والرسائل كملفات JSON في `server/data/` (`users.json`, `messages.json`, …).
+- **اختياري — `USE_SQLITE=1`:** نفس البيانات في ملف **`ayman.sqljs.db`** عبر مكتبة **sql.js** (بدون تجميع أصلي). عند أول تشغيل مع قاعدة فارغة يُستورد تلقائياً من ملفات JSON الموجودة إن وُجدت.
+- **نسخ احتياطي:** انسخ مجلد `server/data/` بالكامل (أو volume Docker `ayman_data`) قبل الترقية أو النقل.
+- المجلد يُنشأ تلقائياً عند أول تشغيل. احذف المحتوى لإعادة «تفريغ» التطبيق (مع العلم أن SQLite قد يعيد استيراد JSON إن بقيت الملفات).
 
 ## الأمان (مهم قبل أي استخدام حقيقي)
 
@@ -74,6 +75,8 @@ npm run dev
 | `CLIENT_ORIGIN`| أصل الواجهة المسموح (CORS/Socket) | `http://localhost:5173`   |
 | `JWT_SECRET`   | مفتاح توقيع الرموز              | قيمة تطوير (غيّرها)      |
 | `CLIENT_DIST`  | مجلد `client/dist` لخدمة SPA من Express | — (اختياري)        |
+| `USE_SQLITE`   | `1` لتفعيل تخزين sql.js بدل ملفات JSON فقط | `0` / غير معيّن |
+| `SQLITE_PATH`  | مسار ملف قاعدة sql.js                  | `server/data/ayman.sqljs.db` |
 
 مثال تشغيل على ويندوز (PowerShell):
 
@@ -127,6 +130,25 @@ docker compose up --build
 ```bash
 npm run test:smoke
 ```
+
+## CI (GitHub Actions)
+
+عند الدفع إلى `main` أو `master` أو فروع `feat/**` يُشغَّل سير عمل **CI** يقوم بـ: تثبيت الحزم، بناء الواجهة، اختبار دخان API مرتين (JSON ثم `USE_SQLITE=1`)، ثم **Playwright** على Chromium. الملف: `.github/workflows/ci.yml`.
+
+## اختبارات طرفية (Playwright)
+
+```bash
+npm install
+npm run install:all
+npx playwright install chromium
+npm run test:e2e
+```
+
+يُشغِّل `playwright.config.ts` خادماً مؤقتاً عبر `scripts/e2e-serve.mjs` (بناء + `CLIENT_DIST`).
+
+## nginx و HTTPS
+
+مثال إعداد وسيط عكسي مع WebSocket: `deploy/nginx-ayman-chat.example.conf` — انسخه وعدّل النطاق والشهادات.
 
 ## استكشاف الأخطاء
 

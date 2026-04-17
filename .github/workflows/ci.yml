@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, 'feat/**']
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Install dependencies
+        run: npm run install:all
+
+      - name: Build client
+        run: npm run build
+
+      - name: API smoke test (JSON store)
+        run: npm run test:smoke
+
+      - name: API smoke test (SQLite / sql.js)
+        run: npm run test:smoke
+        env:
+          USE_SQLITE: '1'
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: E2E tests
+        run: npx playwright test
+        env:
+          CI: 'true'

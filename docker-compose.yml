@@ -8,6 +8,8 @@ services:
       # غيّرها عند النشر خلف نطاق أو HTTPS
       CLIENT_ORIGIN: "${CLIENT_ORIGIN:-http://localhost:3000}"
       JWT_SECRET: "${JWT_SECRET:-change-me-in-production-use-long-random}"
+      # اختياري: USE_SQLITE=1 لتخزين KV في sql.js (ملف ayman.sqljs.db داخل /app/data)
+      USE_SQLITE: "${USE_SQLITE:-0}"
     volumes:
       - ayman_data:/app/data
 

@@ -19,6 +19,7 @@ import {
   apiUsers,
 } from './api';
 import type { ChatMessage, InboxGroup, InboxPayload, StatusRow, User } from './types';
+import { useWebRtcCall } from './useWebRtcCall';
 
 const TOKEN_KEY = 'ayman_chat_token';
 
@@ -219,6 +220,13 @@ export default function App() {
       timeout: 25000,
     });
   }, [token]);
+
+  const call = useWebRtcCall({
+    socket,
+    selfId: me?.id ?? null,
+    isGroup: Boolean(activeGroup),
+    onError: (msg) => setError(msg),
+  });
 
   const refreshInbox = useCallback(async (t: string) => {
     const data = await apiInbox(t);
@@ -721,6 +729,7 @@ export default function App() {
               <label>
                 اسم المستخدم
                 <input
+                  data-testid="auth-username"
                   value={username}
                   onChange={(ev) => setUsername(ev.target.value)}
                   autoComplete="username"
@@ -730,6 +739,7 @@ export default function App() {
               <label>
                 كلمة المرور
                 <input
+                  data-testid="auth-password"
                   type="password"
                   value={password}
                   onChange={(ev) => setPassword(ev.target.value)}
@@ -737,7 +747,7 @@ export default function App() {
                   dir="ltr"
                 />
               </label>
-              <button className="primary" type="submit" disabled={busy}>
+              <button className="primary" type="submit" disabled={busy} data-testid="auth-submit-login">
                 {busy ? 'جاري الدخول…' : 'دخول'}
               </button>
             </form>
@@ -746,6 +756,7 @@ export default function App() {
               <label>
                 اسم المستخدم (إنجليزي صغير، أرقام، _)
                 <input
+                  data-testid="auth-username"
                   value={username}
                   onChange={(ev) => setUsername(ev.target.value)}
                   autoComplete="username"
@@ -755,6 +766,7 @@ export default function App() {
               <label>
                 الاسم الظاهر
                 <input
+                  data-testid="auth-display"
                   value={displayName}
                   onChange={(ev) => setDisplayName(ev.target.value)}
                   autoComplete="name"
@@ -763,6 +775,7 @@ export default function App() {
               <label>
                 كلمة المرور (6 أحرف فأكثر)
                 <input
+                  data-testid="auth-password"
                   type="password"
                   value={password}
                   onChange={(ev) => setPassword(ev.target.value)}
@@ -770,7 +783,7 @@ export default function App() {
                   dir="ltr"
                 />
               </label>
-              <button className="primary" type="submit" disabled={busy}>
+              <button className="primary" type="submit" disabled={busy} data-testid="auth-submit-register">
                 {busy ? 'جاري إنشاء الحساب…' : 'إنشاء حساب'}
               </button>
             </form>
@@ -1045,8 +1058,8 @@ export default function App() {
                 </div>
                 <p className="wa-calls-title">ابدأ مكالمة صوتية أو بالفيديو</p>
                 <p className="muted small">
-                  مكالمات الصوت والفيديو غير مفعّلة في هذه النسخة (تتطلب WebRTC). هنا يظهر سجلّ المكالمات كما في
-                  واتساب.
+                  للمكالمة: افتح محادثة خاصة ثم استخدم أزرار الصوت أو الفيديو أعلى المحادثة (WebRTC + إشارات عبر
+                  الخادم). يحتاج المتصفح إذن الميكروفون/الكاميرا.
                 </p>
               </div>
             </div>
@@ -1086,10 +1099,32 @@ export default function App() {
                   <div className="muted small wa-subtitle">{threadSubtitle}</div>
                 </div>
                 <div className="wa-thread-actions">
-                  <button type="button" className="wa-thread-ic-btn" title="فيديو" disabled>
+                  <button
+                    type="button"
+                    className="wa-thread-ic-btn"
+                    title="مكالمة فيديو"
+                    disabled={
+                      !activePeer ||
+                      Boolean(activeGroup) ||
+                      call.phase !== 'idle' ||
+                      Boolean(call.incoming)
+                    }
+                    onClick={() => activePeer && void call.startOutgoing(activePeer.id, 'video')}
+                  >
                     📹
                   </button>
-                  <button type="button" className="wa-thread-ic-btn" title="صوت" disabled>
+                  <button
+                    type="button"
+                    className="wa-thread-ic-btn"
+                    title="مكالمة صوت"
+                    disabled={
+                      !activePeer ||
+                      Boolean(activeGroup) ||
+                      call.phase !== 'idle' ||
+                      Boolean(call.incoming)
+                    }
+                    onClick={() => activePeer && void call.startOutgoing(activePeer.id, 'audio')}
+                  >
                     📞
                   </button>
                   <button
@@ -1321,6 +1356,54 @@ export default function App() {
           <button type="button" onClick={() => setError(null)}>
             إغلاق
           </button>
+        </div>
+      ) : null}
+
+      <audio ref={call.remoteAudioRef} className="hidden" playsInline autoPlay />
+
+      {call.incoming ? (
+        <div className="wa-call-overlay" role="presentation">
+          <div className="wa-call-card" role="dialog" aria-labelledby="wa-call-incoming-title">
+            <h3 id="wa-call-incoming-title">مكالمة واردة</h3>
+            <p className="muted small">
+              من {userById[call.incoming.fromUserId]?.displayName || 'مستخدم'} —{' '}
+              {call.incoming.media === 'video' ? 'فيديو' : 'صوت فقط'}
+            </p>
+            <div className="wa-call-actions">
+              <button type="button" className="primary" onClick={() => void call.acceptIncoming()}>
+                رد
+              </button>
+              <button type="button" className="ghost" onClick={call.declineIncoming}>
+                رفض
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {call.phase === 'outgoing' ? (
+        <div className="wa-call-overlay" role="presentation">
+          <div className="wa-call-card" role="status">
+            <h3>جاري الاتصال…</h3>
+            <p className="muted small">في انتظار رد الطرف الآخر</p>
+            <button type="button" className="ghost wa-call-full" onClick={call.endCall}>
+              إنهاء
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {call.phase === 'connected' ? (
+        <div className="wa-call-overlay" role="presentation">
+          <div className="wa-call-card wa-call-active" role="dialog" aria-label="مكالمة جارية">
+            <div className="wa-call-videos">
+              <video ref={call.remoteVideoRef} className="wa-call-remote" playsInline autoPlay />
+              <video ref={call.localVideoRef} className="wa-call-local" muted playsInline autoPlay />
+            </div>
+            <button type="button" className="primary wa-call-full" onClick={call.endCall}>
+              إنهاء المكالمة
+            </button>
+          </div>
         </div>
       ) : null}
     </div>

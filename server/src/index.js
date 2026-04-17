@@ -25,6 +25,9 @@ import {
 
 const PORT = Number(process.env.PORT) || 3000;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+const startedAtMs = Date.now();
+const storeDriver =
+  process.env.USE_SQLITE === '1' || process.env.USE_SQLITE === 'true' ? 'sqlite' : 'json';
 
 const onlineUsers = new Set();
 /** يُعيَّن بعد إنشاء Socket.io لمزامنة غرف المجموعات من REST */
@@ -423,7 +426,12 @@ app.post('/api/media', authMiddleware, (req, res) => {
 });
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, name: 'Ayman Chat API' });
+  res.json({
+    ok: true,
+    name: 'Ayman Chat API',
+    uptimeMs: Date.now() - startedAtMs,
+    store: storeDriver,
+  });
 });
 
 /** واجهة الإنتاج: مسار مجلد `dist` بعد `npm run build` في `client/` */
@@ -504,6 +512,46 @@ io.on('connection', (socket) => {
     }
     if (!Number.isFinite(toUserId) || toUserId === uid) return;
     io.to(`user:${toUserId}`).emit('typing', { toUserId, fromUserId: uid, typing });
+  });
+
+  function assertDirectPeer(toUserId) {
+    if (!Number.isFinite(toUserId) || toUserId === uid) return false;
+    const users = loadUsers();
+    return users.some((u) => u.id === toUserId);
+  }
+
+  socket.on('call:offer', (payload) => {
+    const toUserId = Number(payload?.toUserId);
+    const sdp = String(payload?.sdp || '');
+    const type = String(payload?.type || 'offer');
+    const callId = String(payload?.callId || '');
+    const media = payload?.media === 'video' ? 'video' : 'audio';
+    if (!callId || !sdp || !assertDirectPeer(toUserId)) return;
+    io.to(`user:${toUserId}`).emit('call:offer', { fromUserId: uid, sdp, type, callId, media });
+  });
+
+  socket.on('call:answer', (payload) => {
+    const toUserId = Number(payload?.toUserId);
+    const sdp = String(payload?.sdp || '');
+    const type = String(payload?.type || 'answer');
+    const callId = String(payload?.callId || '');
+    if (!callId || !sdp || !assertDirectPeer(toUserId)) return;
+    io.to(`user:${toUserId}`).emit('call:answer', { fromUserId: uid, sdp, type, callId });
+  });
+
+  socket.on('call:candidate', (payload) => {
+    const toUserId = Number(payload?.toUserId);
+    const callId = String(payload?.callId || '');
+    const candidate = payload?.candidate;
+    if (!callId || candidate == null || !assertDirectPeer(toUserId)) return;
+    io.to(`user:${toUserId}`).emit('call:candidate', { fromUserId: uid, candidate, callId });
+  });
+
+  socket.on('call:end', (payload) => {
+    const toUserId = Number(payload?.toUserId);
+    const callId = String(payload?.callId || '');
+    if (!callId || !assertDirectPeer(toUserId)) return;
+    io.to(`user:${toUserId}`).emit('call:end', { fromUserId: uid, callId });
   });
 
   socket.on('message:send', (payload, ack) => {
