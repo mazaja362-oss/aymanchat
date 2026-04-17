@@ -212,8 +212,12 @@ export default function App() {
       path: '/socket.io',
       auth: { token },
       autoConnect: true,
-      /* polling أولاً يمر عبر وكيل Vite بثبات ثم الترقية لـ websocket */
-      transports: ['polling', 'websocket'],
+      /*
+       * في التطوير: polling فقط — وكيل WebSocket في Vite يُسقط الاتصال أحياناً (ECONNABORTED)
+       * عند الترقية من polling إلى websocket أو عند node --watch.
+       * في الإنتاج (نفس المنفذ بدون Vite): نفعّل websocket بعد polling.
+       */
+      transports: import.meta.env.DEV ? ['polling'] : ['polling', 'websocket'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 8000,
@@ -374,16 +378,23 @@ export default function App() {
       }
     };
 
+    const onUsersChanged = () => {
+      const t = token;
+      if (t) void Promise.all([refreshUsers(t), refreshInbox(t)]);
+    };
+
     socket.on('message:new', onNew);
     socket.on('presence:update', onPresence);
     socket.on('typing', onTyping);
+    socket.on('users:changed', onUsersChanged);
     return () => {
       socket.off('message:new', onNew);
       socket.off('presence:update', onPresence);
       socket.off('typing', onTyping);
+      socket.off('users:changed', onUsersChanged);
       socket.disconnect();
     };
-  }, [socket, token, refreshInbox]);
+  }, [socket, token, refreshInbox, refreshUsers]);
 
   useEffect(() => {
     if (!token || !activePeer) {

@@ -1,0 +1,24 @@
+# مثال: خادم coturn منفصل لـ WebRTC خلف NAT
+# انسخ القيم (realm، user، password) ولا ترفع أسراراً حقيقية إلى git.
+#
+# التشغيل: docker compose -f docker-compose.coturn.example.yml up -d
+#
+# ثم على خادم Ayman Chat عيّن (سطر JSON واحد):
+#   ICE_SERVERS_JSON='[{"urls":"stun:stun.l.google.com:19302"},{"urls":"turn:127.0.0.1:3478?transport=udp","username":"ayman","credential":"change-me"}]'
+#
+# في الإنتاج استبدل 127.0.0.1 باسم النطاق العام لـ coturn.
+
+services:
+  coturn:
+    image: coturn/coturn:4.6
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49200
+      - --fingerprint
+      - --lt-cred-mech
+      - --user=ayman:change-me-turn-secret
+      - --realm=ayman-chat

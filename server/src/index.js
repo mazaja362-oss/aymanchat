@@ -196,6 +196,10 @@ app.post('/api/register', authLimiter, (req, res) => {
   users.push(row);
   saveUsers(users);
 
+  if (ioInstance) {
+    ioInstance.emit('users:changed');
+  }
+
   const token = signToken({ sub: String(id) });
   return res.json({ token, user: safeUser(row) });
 });
@@ -423,6 +427,27 @@ app.post('/api/media', authMiddleware, (req, res) => {
   fs.writeFileSync(fp, buf);
   const url = `/uploads/${name}`;
   return res.json({ url });
+});
+
+/**
+ * إعدادات ICE لـ WebRTC (STUN/TURN). عيّن ICE_SERVERS_JSON كمصفوفة JSON لـ RTCIceServer[]
+ * مثال: [{"urls":"stun:stun.l.google.com:19302"},{"urls":"turn:turn.example.com:3478","username":"u","credential":"p"}]
+ */
+app.get('/api/webrtc/ice', (_req, res) => {
+  let iceServers;
+  try {
+    const raw = process.env.ICE_SERVERS_JSON;
+    if (raw && String(raw).trim()) {
+      const parsed = JSON.parse(String(raw));
+      iceServers = Array.isArray(parsed) ? parsed : null;
+    }
+  } catch {
+    iceServers = null;
+  }
+  if (!iceServers || iceServers.length === 0) {
+    iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+  }
+  res.json({ iceServers });
 });
 
 app.get('/api/health', (_req, res) => {
