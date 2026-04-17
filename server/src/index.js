@@ -22,6 +22,13 @@ import {
   UPLOADS_DIR,
   ensureUploadsDir,
 } from './store.js';
+import { logInfo } from './logger.js';
+import {
+  isMetricsEnabled,
+  recordHttpRequest,
+  renderMetrics,
+  metricsContentType,
+} from './metrics.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
@@ -45,6 +52,19 @@ function syncSocketsToGroup(group) {
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '8mb' }));
+
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    recordHttpRequest(req.method, req.originalUrl || req.url || '');
+    if (process.env.LOG_REQUESTS === '1' || process.env.LOG_REQUESTS === 'true') {
+      const u = String(req.originalUrl || req.url || '');
+      if (!u.includes('/socket.io')) {
+        logInfo('http', { method: req.method, url: u, status: res.statusCode });
+      }
+    }
+  });
+  next();
+});
 
 /** يحدّ من محاولات التسجيل/الدخول لكل عنوان IP */
 const authLimiter = rateLimit({
@@ -459,6 +479,17 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+if (isMetricsEnabled()) {
+  app.get('/metrics', async (_req, res) => {
+    try {
+      res.setHeader('Content-Type', metricsContentType());
+      res.send(await renderMetrics());
+    } catch (e) {
+      res.status(500).type('text/plain').send(String(e));
+    }
+  });
+}
+
 /** واجهة الإنتاج: مسار مجلد `dist` بعد `npm run build` في `client/` */
 const CLIENT_DIST_RAW = process.env.CLIENT_DIST ? String(process.env.CLIENT_DIST).trim() : '';
 const CLIENT_DIST_ABS =
@@ -472,7 +503,8 @@ if (CLIENT_DIST_ABS) {
     if (
       req.path.startsWith('/api') ||
       req.path.startsWith('/uploads') ||
-      req.path.startsWith('/socket.io')
+      req.path.startsWith('/socket.io') ||
+      req.path === '/metrics'
     ) {
       return next();
     }
@@ -688,5 +720,5 @@ server.on('error', (err) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Ayman Chat server http://localhost:${PORT}`);
+  logInfo(`Ayman Chat server http://localhost:${PORT}`);
 });

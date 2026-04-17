@@ -78,6 +78,9 @@ npm run dev
 | `USE_SQLITE`   | `1` لتفعيل تخزين sql.js بدل ملفات JSON فقط | `0` / غير معيّن |
 | `SQLITE_PATH`  | مسار ملف قاعدة sql.js                  | `server/data/ayman.sqljs.db` |
 | `ICE_SERVERS_JSON` | مصفوفة JSON لخوادم STUN/TURN لـ WebRTC | STUN افتراضي من `/api/webrtc/ice` |
+| `ENABLE_METRICS` | `1` لتفعيل **`GET /metrics`** (Prometheus) | غير مفعّل |
+| `LOG_REQUESTS`   | `1` لطباعة كل طلب HTTP (بدون ضجيج socket.io في السطر) | غير مفعّل |
+| `LOG_LEVEL`      | `info` / `warn` / `error` / `debug` / `silent`            | `info`        |
 
 مثال تشغيل على ويندوز (PowerShell):
 
@@ -150,6 +153,10 @@ npm run test:e2e
 ## nginx و HTTPS
 
 مثال إعداد وسيط عكسي مع WebSocket: `deploy/nginx-ayman-chat.example.conf` — انسخه وعدّل النطاق والشهادات.
+
+## المراقبة (Prometheus)
+
+فعّل **`ENABLE_METRICS=1`** ثم اجمع من **`GET /metrics`** (تنسيق Prometheus). في الإنتاج اجعل الوصول داخل الشبكة أو خلف وسيط يقيّد المسار.
 
 ## WebRTC: STUN و TURN
 
